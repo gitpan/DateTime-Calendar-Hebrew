@@ -1,9 +1,10 @@
 package DateTime::Calendar::Hebrew;
 
 use vars qw($VERSION);
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 use strict;
+no strict 'refs';
 
 use DateTime;
 use Params::Validate qw/validate SCALAR OBJECT CODEREF/;
@@ -44,9 +45,9 @@ sub new {
 											sub { $_[0] >= 0 && $_[0] <= 59 }
 									    }
 									  },
-						nanosecond => { type => SCALAR, default => 0 },
-						sunset     => { type => CODEREF, optional => 1 },
-						time_zone  => { type => SCALAR | OBJECT, default => 'floating' },
+						nanosecond =>	{ type => SCALAR, default => 0 },
+						sunset     =>	{ type => OBJECT, optional => 1 },
+						time_zone  =>	{ type => SCALAR, optional => 1 },
                       } );
 
     my $self = bless \%p, $class;
@@ -55,14 +56,18 @@ sub new {
 	$self->{rd_secs} = $p{hour} * 60 * 60 + $p{minute} * 60 + $p{second};
 	$self->{rd_nanosecs} = $p{nanosecond};
 
-	if(my $coderef = $self->{sunset}) {
-		my $time_in_seconds = $self->{rd_secs};
+	if($self->{sunset} and $self->{time_zone}) {
+		my $DT_Event_Sunrise = $self->{sunset};
+		my $time_zone = $self->{time_zone};
 		my $DT = DateTime->from_object(object => $self);
-		my ($y, $m, $d) = split(/-/, $DT->ymd);
-		my $sunset = &$coderef($y, $m, $d);
-		if($time_in_seconds > $sunset) { 
-			$self->{rd_days}++;
-			@{$self}{ qw( year month day ) } = &_from_rd($self->{rd_days});
+		$DT->truncate(to => 'day');
+
+		my $sunset = $DT_Event_Sunrise->next($DT);
+		$sunset->set_time_zone($time_zone);
+
+		if($sunset > $DT) {
+			$self->{after_sunset} = 1;
+			@{$self}{qw/year month day/} = &_from_rd($self->{rd_days} + 1);
 		}
 	}
 
@@ -70,17 +75,21 @@ sub new {
 }
 
 sub from_object {
-	my $class = shift;
-	my %p = validate ( @_, {
-		object => {
-			type => OBJECT,
-			can => 'utc_rd_values',
-		},
-	});
+    my ( $class ) = shift;
+    my %p = validate( @_,
+        {
+            object => {
+                type => OBJECT,
+                can => 'utc_rd_values',
+            },
+        },
+    );
 
-	my $object = delete $p{object};
+    my $object = $p{object}->clone();
+    $object->set_time_zone('floating') if $object->can( 'set_time_zone' );
 
-	my ( $rd_days, $rd_secs, $rd_nanosecs ) = $object->utc_rd_values;
+    my ($rd_days, $rd_secs, $rd_nanosecs) = $object->utc_rd_values();
+	$rd_nanosecs ||= 0;
 
 	my %args;
 	@args{ qw( year month day ) } = &_from_rd($rd_days);
@@ -133,8 +142,9 @@ sub set {
 										sub { $_[0] >= 0 && $_[0] <= 59 }
 									  }
 									},
-						nanosecond => { type => SCALAR, optional => 1 },
-						sunset => { type => CODEREF, optional => 1 },
+						nanosecond =>	{ type => SCALAR, optional => 1 },
+						sunset =>		{ type => OBJECT, optional => 1 },
+						time_zone =>	{ type => SCALAR, optional => 1 },
                       } );
 
     $self->{$_} = $p{$_} for keys %p;
@@ -143,21 +153,28 @@ sub set {
     $self->{rd_secs} = $self->{hour} * 60 * 60 + $self->{minute} * 60 + $self->{second};
 	$self->{rd_nanosecs} = $self->{nanosecond};
 
-	if(my $coderef = $self->{sunset}) {
-		my $time_in_seconds = $self->{rd_secs};
+	if($self->{sunset} and $self->{time_zone}) {
+		my $DT_Event_Sunrise = $self->{sunset};
+		my $time_zone = $self->{time_zone};
 		my $DT = DateTime->from_object(object => $self);
-		my ($y, $m, $d) = split(/-/, $DT->ymd);
-		my $sunset = &$coderef($y, $m, $d);
-		if($time_in_seconds > $sunset) { 
-			$self->{rd_days}++;
-			@{$self}{ qw( year month day ) } = &_from_rd($self->{rd_days});
+		$DT->truncate(to => 'day');
+
+		my $sunset = $DT_Event_Sunrise->next($DT);
+		$sunset->set_time_zone($time_zone);
+
+		if($sunset > $DT) {
+			$self->{after_sunset} = 1;
+			@{$self}{qw/year month day/} = &_from_rd($self->{rd_days} + 1);
 		}
 	}
 
     return $self;
 }
 
-sub utc_rd_values { return @{$_[0]}{ qw/rd_days rd_secs rd_nanosecs/ }; }
+sub utc_rd_values {
+	my $self = shift;
+	return @{$self}{ qw/rd_days rd_secs rd_nanosecs/ };
+}
 
 sub utc_rd_as_seconds {
     my $self = shift;
@@ -326,48 +343,51 @@ sub day_name {
 	my $day = $self->day_of_week;
 	if(@_) { $day = shift; }
 
-    return (qw/Sunday Monday Tuesday Wednesday Thursday Friday Shabbat/)[$day - 1];
+    return (qw/Sunday Monday Tuesday Wednesday Thursday Friday Shabbos/)[$day - 1];
 }
+
+sub time_zone { 'floating' }
 
 sub year    { $_[0]->{year} }
 
 sub month   { $_[0]->{month} }
-*mon = \&month;
+	*mon = \&month;
 
-sub month_0   { $_[0]->{month} - 1 }
-*mon_0 = \&month_0;
+sub month_0   { $_[0]->month - 1 }
+	*mon_0 = \&month_0;
 
 sub day_of_month { $_[0]->{day} }
-*day  = \&day_of_month;
-*mday = \&day_of_month;
+	*day  = \&day_of_month;
+	*mday = \&day_of_month;
 
-sub day_of_month_0 { $_[0]->{day} - 1 }
-*day_0  = \&day_of_month_0;
-*mday_0 = \&day_of_month_0;
+sub day_of_month_0 { $_[0]->day - 1 }
+	*day_0  = \&day_of_month_0;
+	*mday_0 = \&day_of_month_0;
 
 sub day_of_week {
 	my $rd_days = $_[0]->{rd_days};
+	if($_[0]->{after_sunset}) { $rd_days++; }
 	return $rd_days % 7 + 1;
 }
-*wday = \&day_of_week;
-*dow  = \&day_of_week;
+	*wday = \&day_of_week;
+	*dow  = \&day_of_week;
 
 sub day_of_week_0 {
 	my $rd_days = $_[0]->{rd_days};
+	if($_[0]->{after_sunset}) { $rd_days++; }
 	return $rd_days % 7;
 }
-*wday_0 = \&day_of_week_0;
-*dow_0  = \&day_of_week_0;
+	*wday_0 = \&day_of_week_0;
+	*dow_0  = \&day_of_week_0;
 
-sub week_number {
-    my $self = shift;
+sub hour    { $_[0]->{hour} }
+	*hr = \&hour;
 
-	my $day_of_year = $self->day_of_year;
-	my $start_of_year = &_to_rd($self->{year}, 1, 1);
-	my $first_week_started_on = $start_of_year % 7 + 1;
+sub minute    { $_[0]->{minute} }
+	*min = \&minute;
 
-	return (($day_of_year + (7 - $first_week_started_on)) / 7) + 1;
-}
+sub second    { $_[0]->{second} }
+	*sec = \&second;
 
 sub day_of_year {
 	my $self = shift;
@@ -375,54 +395,81 @@ sub day_of_year {
 
 	my $m = 1;
 	while ($m < $month) {
-		$day += $self->_LastDayOfMonth($year, $m);
+		$day += &_LastDayOfMonth($year, $m);
 		$m++;
 	}
 	return $day;
 }
-*doy = \&day_of_year;
+	*doy = \&day_of_year;
+
+sub week_number {
+    my $self = shift;
+
+	my $day_of_year = $self->day_of_year;
+	my $start_of_year = &_to_rd($self->year, 1, 1);
+	my $first_week_started_on = $start_of_year % 7 + 1;
+
+	return (($day_of_year + (7 - $first_week_started_on)) / 7) + 1;
+}
 
 sub day_of_year_0 { $_[0]->day_of_year - 1; }
-*doy_0 = \&day_of_year_0;
+	*doy_0 = \&day_of_year_0;
+
+sub hms {
+    my ($self, $sep) = @_;
+    $sep = ':' unless defined $sep;
+
+    return sprintf( "%02d%s%02d%s%02d",
+                    $self->hour, $sep,
+                    $self->minute, $sep,
+                    $self->second );
+}
+	*time = \&hms;
+
+sub hm {
+    my ($self, $sep) = @_;
+    $sep = ':' unless defined $sep;
+
+    return sprintf( "%02d%s%02d",
+                    $self->hour, $sep,
+                    $self->minute );
+}
 
 sub ymd {
     my ($self, $sep) = @_;
     $sep = '-' unless defined $sep;
 
     return sprintf( "%04d%s%02d%s%02d",
-                    $self->{year}, $sep,
-                    $self->{month}, $sep,
-                    $self->{day} );
+                    $self->year, $sep,
+                    $self->month, $sep,
+                    $self->day );
 }
-*date = \&ymd;
+	*date = \&ymd;
 
 sub mdy {
     my ($self, $sep) = @_;
     $sep = '-' unless defined $sep;
 
     return sprintf( "%02d%s%02d%s%04d",
-                    $self->{month}, $sep,
-                    $self->{day}, $sep,
-                    $self->{year} );
+                    $self->month, $sep,
+                    $self->day, $sep,
+                    $self->year );
 }
+
 sub dmy {
     my ($self, $sep) = @_;
     $sep = '-' unless defined $sep;
 
     return sprintf( "%02d%s%02d%s%04d",
-                    $self->{day}, $sep,
-                    $self->{month}, $sep,
-                    $self->{year} );
+                    $self->day, $sep,
+                    $self->month, $sep,
+                    $self->year );
 }
 
-sub hour    { $_[0]->{hour} }
-*hr = \&hour;
-
-sub minute    { $_[0]->{minute} }
-*min = \&minute;
-
-sub second    { $_[0]->{second} }
-*sec = \&second;
+sub datetime {
+	my $self = shift;
+	return ($self->ymd('-') . "T" . $self->hms);
+}
 
 my %formats = (
       'A' => sub { $_[0]->day_name },
@@ -487,7 +534,7 @@ DateTime::Calendar::Hebrew - Dates in the Hebrew calendar
 =head1 DESCRIPTION
 
 DateTime::Calendar::Hebrew is the implementation of the Hebrew calendar.
-See README.hebrew for more details on the Hebrew calendar.
+See the README for more details on the Hebrew calendar.
 
 =head1 METHODS
 
@@ -502,20 +549,19 @@ See README.hebrew for more details on the Hebrew calendar.
 	);
 
 This class method accepts parameters for each date and time component:
-"year", "month", "day", "hour", "minute", "second", "nanosecond" and
-"timezone". "year" is required, all the rest are optional. time fields
-default to '0', month/day fields to '1', timezone to 'floating'. All
-fields except year and timezone  are tested for validity:
+"year", "month", "day", "hour", "minute", "second" and "nanosecond".
+"year" is required, all the rest are optional. time fields default to
+'0', month/day fields to '1'. All fields except year are tested for validity:
 
 	month : 1 to 13
 	day   : 1 to 30
 	hour  : 0 to 23
 	minute/second : 0 to 59
 
-The days on the Hebrew calendar begin at sunset. 
-If you want to know the Hebrew date, accurate with regard to local sunset, you can add a 'sunset' parameter.
-The sunset parameter must be a function-reference that accepts the parameters (year, month, day) and returns the time for sunset,
-local to your DateTime, in seconds-since-midnight. See README.sunset for more info.
+Date::Calendar::Hebrew doesn't support timezones. It uses the floating timezone.
+
+The days on the Hebrew calendar begin at sunset. If you want to know the Hebrew
+date, accurate with regard to local sunset, see the README.
 
 =item * from_object(object => $object)
 
@@ -534,19 +580,21 @@ provide cross-calendar compatibility.
 
 This method allows you to modify the values of the object. valid
 fields are "year", "month", "day", "hour", "minute", "second",
-"nanosecond" and "sunset". Returns the object being modified.
+and "nanosecond" . Returns the object being modified.
 Values are checked for validity just as they are in new().
 
 =item * utc_rd_values
 
 Returns the current UTC Rata Die days and seconds as a three element
 list.  This exists primarily to allow other calendar modules to create
-objects based on the values provided by this object.
+objects based on the values provided by this object. We don't support
+timezones, so this is actually the local RD.
 
 =item * utc_rd_as_seconds
 
 Returns the current UTC Rata Die days and seconds purely as seconds.
-This is useful when you need a single number to represent a date.
+This is useful when you need a single number to represent a date. We
+don't support timezones, so this is actually the local RD as seconds.
 
 =item * clone
 
@@ -580,7 +628,7 @@ Returns the day of the month, from 0..29.
 
 Returns the name of the given month.  Called on an object ($dt->month_name), it returns the month name for the current month.
 
-The Hebrew months are Nissan, Iyar, Sivan, Tammuz, (Menachem)Av, Elul, Tishrei, (Mar)Cheshvan, Kislev, Teves, Shevat & Adar. Leap years have "Adar II" or Second-Adar. If you feel that the order of the months is wrong, see README.hebrew.
+The Hebrew months are Nissan, Iyar, Sivan, Tammuz, (Menachem)Av, Elul, Tishrei, (Mar)Cheshvan, Kislev, Teves, Shevat & Adar. Leap years have "Adar II" or Second-Adar. If you feel that the order of the months is wrong, see the README.
 
 =item * day_of_week, wday, dow
 
@@ -674,14 +722,6 @@ Returns the length of the month in question, for the year in question.
 
 =back
 
-=head1 BUGS
-
-=over 4
-
-=item * I must not have tested it enough, I'm not aware of any.
-
-=back
-
 =head1 SUPPORT
 
 Support for this module is provided via the datetime@perl.org email
@@ -700,6 +740,8 @@ the same terms as Perl itself.
 =head1 SEE ALSO
 
 L<DateTime>
+
+L<DateTime::Event::Sunrise>
 
 datetime@perl.org mailing list
 

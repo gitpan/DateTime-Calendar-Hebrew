@@ -4,8 +4,6 @@ README
 Changes
 MANIFEST
 LICENSE
-README.hebrew
-README.sunset
 t/new.t
 t/from_object.t
 t/set.t
@@ -15,3 +13,4 @@ t/now.t
 t/today.t
 t/accessors.t
 t/strftime.t
+t/sunset.t

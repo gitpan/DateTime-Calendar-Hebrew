@@ -14,12 +14,119 @@ To install this module type the following:
 
 The module  documentation includes everything you need to know about using the module.
 
-Details about the Hebrew calendar can be found in README.hebrew
-
-COPYRIGHT
-
-  ©2003 Steven Weinberger. All rights reserved.
-
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself.
+
+A Little Information About the Hebrew Calendar
+----------------------------------------------
+Because I'm absolutely dreadful at documentation - I'll put a bibliography first. Here are some absolutely essential books in understanding the Hebrew(Jewish) Calendar. Be forwarned - a working knowledge of Hebrew terms will help greatly:
+
+The Comprehensive Hebrew Calendar by Arthur Spier. Third, Revised edition. Feldheim Publishers. ISBN 0-87306-398-8
+- This book is great. Besides for a complete Jewish Calendar from 1900 to 2100, it contains a 22 page discourse on the Jewish Calendar - history, calculation method, religious observances - the works.
+
+Understanding the Jewish Calendar by Rabbi Nathan Bushwick. Moznaim Publishing Corporation. ISBN 0-94011-817-3
+- Another excellent book. Explains the calendar, lunation cycles, torah portions and more. This has more Astronomy than any of the others.
+
+Calendrical Calculations by Edward Reingold & Nachum Dershowitz. Cambridge University Press. ISBN 0-521-77167-6 or 0-521-77752-6
+- This book focuses on the math of calendar conversions. I use the first edition, which is full of examples in LISP. The second edition is supposed to include examples in other languages. It covers many different calendars - not just Hebrew.
+- See their page @ http://emr.cs.iit.edu/home/reingold/calendar-book/second-edition/
+
+There are other books, but those are the ones I used most extensively in my Perl coding.
+
+THE CALENDAR
+------------
+The Hebrew/Jewish calendar is a Luni-Solar calendar. Torah (Pentateuch) Law mandates that months are Lunar. The first day of a month coincides with the new moon in Jerusalem. (In ancient times, this was determined by witnesses. Read the books in the bibliography for more info). The Torah also mandates that certain holidays must occur in certain seasons. Seasons are solar, so a calendar that can work with lunar & solar events is needed.
+
+The Hebrew Calendar uses a leap-month to regulate itself to the solar seasons. There are 12 months in a regular year. Months can be 29 or 30 days long. 2 of the months (Cheshvan & Kislev) change between having 29 & 30 days, depending on the year. In a Jewish Leap Year, an extra month number 13 is added.
+
+Now a quick note about the numbering of the months. Most people expect a new year to start with month #1. However, the Hebrew calendar has more than one new year. The year number changes in the (Northern Hemisphere) Autumn with Tishrei (month #7), but the months are numbered beginning with Nissan (month #1) in the Spring.
+
+Tishrei is the month in which you find the High-Holy-Days - 'Rosh HaShana' & 'Yom Kippur'.
+
+Nissan, the Spring-new-year, commemorates the Exodus of the Ancient Israelites from Egypt. The Torah refers to months only by number, beginning with Nissan, e.g. giving the date of Yom Kippur in 'the seventh month'.
+
+This system works for well for us, because of the leap month. If the new year is in the spring, the leap month is month 13. Otherwise, we'd have to re-number the months after a leap-month. 
+
+Every month has a set number, using this module. Here's a list:
+1) Nissan
+2) Iyar
+3) Sivan
+4) Tammuz
+5) Av or Menachem-Av
+6) Elul
+7) Tishrei
+8) Cheshvan or Mar-Cheshvan
+9) Kislev
+10) Teves
+11) Shevat
+12) Adar I
+13) Adar II (only in leap years)
+
+** A NOTE ABOUT SPELLING **
+If you speak Hebrew, you may take issue with my spelling of Hebrew words. I'm sorry, I used the spelling closest to the way I pronounce it. You could call it "Brooklyn-Ashkenaz-Pronunciation", if you like.
+
+Back to the calendar. A cycle of Hebrew years takes 19 years and is called a Machzor. In that cycle, years 3, 6, 8, 11, 14, 17 & 19 are leap years.
+
+Days (and holidays) begin at sunset, see below for more info.
+
+The calculations for the start and length of the year are based on a number of factors, including rules about what holidays can't be on what days of the week, and things like that. For more detailed information about the Hebrew Calendar and Hebrew-Calendar-Algorithms, pick up one of the books listed above. I'm just not willing to plagiarize it all here. Of course a Google search on "Jewish Calendar" will probably offer you a wealth of materials.
+
+SUNSET AND THE HEBREW DATE
+--------------------------
+Days in the Hebrew Calendar start at sunset. This is only relevant for religious purposes or pedantic programmers. There are some serious (religious) issues involved, in areas that don't have a clearly defined, daily sunset or sunrise. In the Arctic Circle, there are summer days where the sun doesn't set, and winter days where the sun doesn't rise. Other areas (e.g. Anchorage, Alaska Stockholm, Sweden, Oslo, Norway) where the days are very short and twilight is exceptionally long. (I've never experienced this, I'm copying it from a webpage.) 
+
+First off, I'd like to say, that if you are Jewish and have questions related to sunrise/sunset and religious observances - consult your local Rabbi. I'm no expert.
+
+If you're not Jewish, and you want to know about Hebrew dates in these areas (or even if you are Jewish but you don't live there) - make friends with someone Jewish who lives there and ask them to ask their Rabbi. :)
+
+Now that my awkward disclaimer is finished, on to the code issues.
+
+If you wish the Hebrew date to be accurate with regard to sunset, you need to provide 2 things: A DateTime::Event::Sunrise object, initialized with a longitude and latitude for your location AND a time-zone for your location. Without a timezone, I can't calculate sunset properly. These items can be passed in via the constructor, or the set method. You could configure the L<DateTime::Event::Sunrise> object for altitude & interpolation if you wish.
+
+SAMPLE CODE:
+-----------
+
+#!/usr/local/bin/perl
+use DateTime::Calendar::Hebrew;
+use DateTime::Event::Sunrise;
+
+my $sunset = DateTime::Event::Sunrise->sunset (
+	# Latitude/Longitude for NYC
+	longitude =>'-73.59',
+	latitude =>'40.38',
+);
+
+# Rosh HaShana (Jewish New Year) 2003/5764
+$HT = new DateTime::Calendar::Hebrew(
+	year   => 5764,
+	month  => 7,
+	day    => 1,
+	hour   => 22,
+	minute => 30,
+);
+
+# 5764/07/01, because we haven't provided the necessary fields
+print $HT->datetime, "\n";
+
+$HT->set(
+	sunset => $sunset,
+	time_zone => "America/New_York",
+);
+
+# 5764/07/02 b/c 10:30pm is always after sunset in NYC.
+print $HT->datetime, "\n";
+exit;
+
+SUNSET NOTES:
+	- This feature was only tested for time-zones with a sunset for the day in question.
+	- THE RD_DAYS VALUE IS NOT MODIFIED. The internal local- year/month/day fields are modified. The change in date only shows when using the accessor methods for the object. RD_DAYS only changes at midnight.
+	- The DateTime::Calendar::Hebrew doesn't support timezones! It still uses a 'floating' time zone. Using $obj->set_time_zone(...) isn't implemented, and won't help with sunset calculations. It needs to be a field.
+
+CREDITS
+-------
+- Thanks to my good friend Richie Sevrinsky who helped me make sense of the calculations in the first place.
+- Thanks to all the DateTime developers and the authors of the other Calendar modules, who gave me code to steal from ... I mean emulate.
+- Thanks to Arthur Spier, Rabbi Bushwick and Messrs. Dershowitz and Reingold for writing excellent books on the subject.
+
+©2003 Steven Weinberger <perl@psycomp.com>. All rights reserved.
 

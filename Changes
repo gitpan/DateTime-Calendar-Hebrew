@@ -4,3 +4,8 @@ Revision history for Perl extension DateTime::Calendar::Hebrew.
 	- original version; created by h2xs 1.21 with options
 		-AX -n DateTime::Calendar::Hebrew -v .01
 
+.02  Tue Sep 23 00:00:00 2003
+	- implemented 'floating' timezone properly
+	- implemented after-sunset code properly
+	- changed README, according to suggestions from Yitzchak Scott-Thoennes
+	- merged multiple READMEs into one, according to suggestion from Dave Rolsky
