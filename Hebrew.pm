@@ -1,15 +1,21 @@
 package DateTime::Calendar::Hebrew;
+use DateTime;
+use Params::Validate qw/validate SCALAR OBJECT CODEREF/;
 
 use vars qw($VERSION);
-$VERSION = '0.02';
+$VERSION = '0.03';
 
 use strict;
 no strict 'refs';
 
-use DateTime;
-use Params::Validate qw/validate SCALAR OBJECT CODEREF/;
-
 use constant HEBREW_EPOCH => -1373429;
+
+use overload
+	fallback => 1,
+	'<=>' => '_compare_overload',
+	'cmp' => '_compare_overload',
+	'+'   => '_add_overload',
+	'-'   => '_subtract_overload';
 
 sub new {
     my $class = shift;
@@ -45,7 +51,12 @@ sub new {
 											sub { $_[0] >= 0 && $_[0] <= 59 }
 									    }
 									  },
-						nanosecond =>	{ type => SCALAR, default => 0 },
+						nanosecond =>	{ type => SCALAR, default => 0,
+									    callbacks => {
+											'is between 0 and 999999999' =>
+											sub { $_[0] >= 0 && $_[0] <= 999999999 }
+									    }
+									  },
 						sunset     =>	{ type => OBJECT, optional => 1 },
 						time_zone  =>	{ type => SCALAR, optional => 1 },
                       } );
@@ -54,18 +65,17 @@ sub new {
 
 	$self->{rd_days} = &_to_rd(@p{ qw(year month day) });
 	$self->{rd_secs} = $p{hour} * 60 * 60 + $p{minute} * 60 + $p{second};
-	$self->{rd_nanosecs} = $p{nanosecond};
+	if($self->{nanosecond}) { $self->{rd_nanosecs} = delete $self->{nanosecond}; }
 
 	if($self->{sunset} and $self->{time_zone}) {
 		my $DT_Event_Sunrise = $self->{sunset};
 		my $time_zone = $self->{time_zone};
 		my $DT = DateTime->from_object(object => $self);
-		$DT->truncate(to => 'day');
 
-		my $sunset = $DT_Event_Sunrise->next($DT);
+		my $sunset = $DT_Event_Sunrise->next($DT->clone->truncate(to => 'day'));
 		$sunset->set_time_zone($time_zone);
 
-		if($sunset > $DT) {
+		if($DT > $sunset) {
 			$self->{after_sunset} = 1;
 			@{$self}{qw/year month day/} = &_from_rd($self->{rd_days} + 1);
 		}
@@ -76,14 +86,12 @@ sub new {
 
 sub from_object {
     my ( $class ) = shift;
-    my %p = validate( @_,
-        {
+    my %p = validate( @_, {
             object => {
                 type => OBJECT,
                 can => 'utc_rd_values',
             },
-        },
-    );
+	});
 
     my $object = $p{object}->clone();
     $object->set_time_zone('floating') if $object->can( 'set_time_zone' );
@@ -94,12 +102,12 @@ sub from_object {
 	my %args;
 	@args{ qw( year month day ) } = &_from_rd($rd_days);
 
-	my($hour, $minute, $second);
-	$second = $rd_secs % 60;
-	$minute = $rd_secs / 60;
-	$hour = int($minute / 60);
-	$minute = $minute % 60;
-	@args{ qw( hour minute second ) } = ($hour, $minute, $second);
+    my($h, $m, $s);
+    $s = $rd_secs % 60;
+    $m = int($rd_secs / 60);
+    $h = int($m / 60);
+    $m %= 60;
+	@args{ qw(hour minute second) } = ($h, $m, $s);
 
 	$args{nanosecond} = $rd_nanosecs || 0;
 
@@ -142,7 +150,12 @@ sub set {
 										sub { $_[0] >= 0 && $_[0] <= 59 }
 									  }
 									},
-						nanosecond =>	{ type => SCALAR, optional => 1 },
+						nanosecond =>	{ type => SCALAR, optional => 1,
+									      callbacks => {
+											'is between 0 and 999999999' =>
+											sub { $_[0] >= 0 && $_[0] <= 999999999 }
+										}
+									},
 						sunset =>		{ type => OBJECT, optional => 1 },
 						time_zone =>	{ type => SCALAR, optional => 1 },
                       } );
@@ -151,18 +164,17 @@ sub set {
 
 	$self->{rd_days} = &_to_rd($self->{year}, $self->{month}, $self->{day});
     $self->{rd_secs} = $self->{hour} * 60 * 60 + $self->{minute} * 60 + $self->{second};
-	$self->{rd_nanosecs} = $self->{nanosecond};
+	if($self->{nanosecond}) { $self->{rd_nanosecs} = delete $self->{nanosecond}; }
 
 	if($self->{sunset} and $self->{time_zone}) {
 		my $DT_Event_Sunrise = $self->{sunset};
 		my $time_zone = $self->{time_zone};
 		my $DT = DateTime->from_object(object => $self);
-		$DT->truncate(to => 'day');
 
-		my $sunset = $DT_Event_Sunrise->next($DT);
+		my $sunset = $DT_Event_Sunrise->next($DT->clone->truncate(to => 'day'));
 		$sunset->set_time_zone($time_zone);
 
-		if($sunset > $DT) {
+		if($DT > $sunset) {
 			$self->{after_sunset} = 1;
 			@{$self}{qw/year month day/} = &_from_rd($self->{rd_days} + 1);
 		}
@@ -180,16 +192,92 @@ sub utc_rd_as_seconds {
     my $self = shift;
     my ($rd_days, $rd_secs, $rd_nanosecs) = $self->utc_rd_values;
 
-    if (defined $rd_days) {
-        return $rd_days*24*60*60 + $rd_secs;
-    } else {
-        return undef;
-    }
+	return $rd_days*24*60*60 + $rd_secs;
 }
 
 sub clone {
     my $self = shift;
-    return bless {%$self}, ref $self;
+	my $clone = {%$self};
+    bless $clone, ref $self;
+	return $clone;
+}
+
+sub _compare_overload {
+    return $_[2] ? - $_[0]->_compare($_[1]) : $_[0]->_compare($_[1]);
+}
+
+sub _compare {
+	my($a, $b) = @_;
+
+	return undef unless defined $b;
+
+	unless($a->can('utc_rd_values') and $b->can('utc_rd_values')) {
+		die "Cannot compare a datetime to a regular scalar";
+	}
+
+    my @a = $a->utc_rd_values;
+    my @b = $b->utc_rd_values;
+
+    foreach my $i (0..2) {
+		return ($a[$i] <=> $b[$i]) if($a[$i] != $b[$i]);
+    }
+
+    return 0;
+}
+
+sub _add_overload {
+    my($dt, $dur, $reversed) = @_;
+    ($dur,$dt) = ($dt,$dur) if $reversed;
+	return $dt->clone->add_duration($dur);
+}
+
+sub _subtract_overload {
+    my($dt, $dur, $reversed) = @_;
+    ($dur,$dt) = ($dt,$dur) if $reversed;
+	return $dt->clone->subtract_duration($dur);
+}
+
+sub add_duration {
+    my ($self, $dur) = @_;
+	my %deltas = $dur->deltas;
+
+	if($deltas{days})    { $self->{rd_days} += $deltas{days}; }
+    if($deltas{hours})   { $self->{rd_secs} += $deltas{hours} * 60 * 60; }
+    if($deltas{minutes}) { $self->{rd_secs} += $deltas{minutes} * 60; }
+    if($deltas{seconds}) { $self->{rd_secs} += $deltas{seconds}; }
+    if($deltas{nanoseconds}) { $self->{rd_nanosecs} += $deltas{nanoseconds}; }
+
+	while($self->{rd_secs} < 0) {
+		$self->{rd_days}--;
+		$self->{rd_secs} += (24 * 60 * 60);
+	}
+
+    return $self->_normalize;
+}
+
+sub subtract_duration {
+	my ($self, $dur) = @_;
+	return $self->add_duration($dur->inverse);
+}
+
+sub _normalize {
+	my($self) = shift; 
+
+	my($h, $m, $s, $d);
+	$s = $self->{rd_secs} % 60;
+	$m = int($self->{rd_secs} / 60);
+	$h = int($m / 60);
+	$m %= 60;
+	$d = int($h / 24);
+	$h %= 24;
+
+	$self->{rd_days} += $d;
+	$self->{rd_secs} = ($h * 60 * 60) + ($m * 60) + $s;
+
+	@{$self}{qw/year month day/} = &_from_rd($self->{rd_days});
+	@{$self}{qw/hour minute second/} = ($h, $m, $s);
+	
+	return $self;
 }
 
 sub now {
@@ -351,43 +439,43 @@ sub time_zone { 'floating' }
 sub year    { $_[0]->{year} }
 
 sub month   { $_[0]->{month} }
-	*mon = \&month;
+*mon = \&month;
 
 sub month_0   { $_[0]->month - 1 }
-	*mon_0 = \&month_0;
+*mon_0 = \&month_0;
 
 sub day_of_month { $_[0]->{day} }
-	*day  = \&day_of_month;
-	*mday = \&day_of_month;
+*day  = \&day_of_month;
+*mday = \&day_of_month;
 
 sub day_of_month_0 { $_[0]->day - 1 }
-	*day_0  = \&day_of_month_0;
-	*mday_0 = \&day_of_month_0;
+*day_0  = \&day_of_month_0;
+*mday_0 = \&day_of_month_0;
 
 sub day_of_week {
 	my $rd_days = $_[0]->{rd_days};
 	if($_[0]->{after_sunset}) { $rd_days++; }
 	return $rd_days % 7 + 1;
 }
-	*wday = \&day_of_week;
-	*dow  = \&day_of_week;
+*wday = \&day_of_week;
+*dow  = \&day_of_week;
 
 sub day_of_week_0 {
 	my $rd_days = $_[0]->{rd_days};
 	if($_[0]->{after_sunset}) { $rd_days++; }
 	return $rd_days % 7;
 }
-	*wday_0 = \&day_of_week_0;
-	*dow_0  = \&day_of_week_0;
+*wday_0 = \&day_of_week_0;
+*dow_0  = \&day_of_week_0;
 
 sub hour    { $_[0]->{hour} }
-	*hr = \&hour;
+*hr = \&hour;
 
 sub minute    { $_[0]->{minute} }
-	*min = \&minute;
+*min = \&minute;
 
 sub second    { $_[0]->{second} }
-	*sec = \&second;
+*sec = \&second;
 
 sub day_of_year {
 	my $self = shift;
@@ -400,7 +488,7 @@ sub day_of_year {
 	}
 	return $day;
 }
-	*doy = \&day_of_year;
+*doy = \&day_of_year;
 
 sub week_number {
     my $self = shift;
@@ -413,7 +501,7 @@ sub week_number {
 }
 
 sub day_of_year_0 { $_[0]->day_of_year - 1; }
-	*doy_0 = \&day_of_year_0;
+*doy_0 = \&day_of_year_0;
 
 sub hms {
     my ($self, $sep) = @_;
@@ -424,7 +512,7 @@ sub hms {
                     $self->minute, $sep,
                     $self->second );
 }
-	*time = \&hms;
+*time = \&hms;
 
 sub hm {
     my ($self, $sep) = @_;
@@ -444,7 +532,7 @@ sub ymd {
                     $self->month, $sep,
                     $self->day );
 }
-	*date = \&ymd;
+*date = \&ymd;
 
 sub mdy {
     my ($self, $sep) = @_;
@@ -533,8 +621,93 @@ DateTime::Calendar::Hebrew - Dates in the Hebrew calendar
 
 =head1 DESCRIPTION
 
-DateTime::Calendar::Hebrew is the implementation of the Hebrew calendar.
-See the README for more details on the Hebrew calendar.
+C<DateTime::Calendar::Hebrew> is the implementation of the Hebrew calendar.
+Read on for more details on the Hebrew calendar.
+
+=head1 THE HEBREW (JEWISH) CALENDAR
+
+The Hebrew/Jewish calendar is a Luni-Solar calendar. Torah Law mandates that months are Lunar. The first day of a month coincides with the new moon in Jerusalem. (In ancient times, this was determined by witnesses. Read the books in the bibliography for more info). The Torah also mandates that certain holidays must occur in certain seasons. Seasons are solar, so a calendar that can work with lunar & solar events is needed.
+
+The Hebrew Calendar uses a leap-month to regulate itself to the solar seasons. There are 12 months in a regular year. Months can be 29 or 30 days long. 2 of the months (Cheshvan & Kislev) change between having 29 & 30 days, depending on the year. In a Jewish Leap Year, an extra month number 13 is added.
+
+Now a quick note about the numbering of the months. Most people expect a new year to start with month #1. However, the Hebrew calendar has more than one new year. The year number changes in the (Northern Hemisphere) Autumn with Tishrei (month #7), but the months are numbered beginning with Nissan (month #1) in the Spring.
+
+Tishrei is the month in which you find the High-Holy-Days - 'Rosh HaShana' & 'Yom Kippur'.
+
+Nissan, the Spring-new-year, commemorates the Exodus of the Ancient Israelites from Egypt. The Torah refers to months only by number, beginning with Nissan, e.g. giving the date of Yom Kippur in 'the seventh month'.
+
+This system works for well for us, because of the leap month. If the new year is in the spring, the leap month is month 13. Otherwise, we'd have to re-number the months after a leap-month. 
+
+Every month has a set number, using this module. Here's a list:
+
+=over 4
+
+=item 1. Nissan
+
+=item 2. Iyar
+
+=item 3. Sivan
+
+=item 4. Tammuz
+
+=item 5. Av or Menachem-Av
+
+=item 6. Elul
+
+=item 7. Tishrei
+
+=item 8. Cheshvan or Mar-Cheshvan
+
+=item 9. Kislev
+
+=item 10. Teves
+
+=item 11. Shevat
+
+=item 12. Adar I
+
+=item 13. Adar II (only in leap years)
+
+=back
+
+I<** A NOTE ABOUT SPELLING **>
+If you speak Hebrew, you may take issue with my spelling of Hebrew words. I'm sorry, I used the spelling closest to the way I pronounce it. You could call it "Brooklyn-Ashkenaz-Pronunciation", if you like.
+
+Back to the calendar. A cycle of Hebrew years takes 19 years and is called a Machzor. In that cycle, years 3, 6, 8, 11, 14, 17 & 19 are leap years.
+
+Days (and holidays) begin at sunset, see below for more info.
+
+The calculations for the start and length of the year are based on a number of factors, including rules about what holidays can't be on what days of the week, and things like that. For more detailed information about the Hebrew Calendar and Hebrew-Calendar-Algorithms, pick up one of the books listed above. I'm just not willing to plagiarize it all here. Of course a Google search on "Jewish Calendar" will probably offer you a wealth of materials.
+
+=head1 SOURCES
+
+Here are some absolutely essential books in understanding the Hebrew(Jewish) Calendar. Be forwarned - a working knowledge of Hebrew terms will help greatly:
+
+B<The Comprehensive Hebrew Calendar by Arthur Spier. Third, Revised edition. Feldheim Publishers. ISBN 0-87306-398-8>
+
+=over 4
+
+This book is great. Besides for a complete Jewish Calendar from 1900 to 2100, it contains a 22 page discourse on the Jewish Calendar - history, calculation method, religious observances - the works.
+
+=back
+
+B<Understanding the Jewish Calendar by Rabbi Nathan Bushwick. Moznaim Publishing Corporation. ISBN 0-94011-817-3>
+
+=over 4
+
+Another excellent book. Explains the calendar, lunation cycles, torah portions and more. This has more Astronomy than any of the others.
+
+=back 
+
+B<Calendrical Calculations by Edward Reingold & Nachum Dershowitz. Cambridge University Press. ISBN 0-521-77167-6 or 0-521-77752-6>
+
+=over 4
+
+This book focuses on the math of calendar conversions. I use the first edition, which is full of examples in LISP. The second edition is supposed to include examples in other languages. It covers many different calendars - not just Hebrew.  See their page @ L<http://emr.cs.iit.edu/home/reingold/calendar-book/second-edition/>
+
+=back
+
+There are other books, but those are the ones I used most extensively in my Perl coding.
 
 =head1 METHODS
 
@@ -557,11 +730,12 @@ This class method accepts parameters for each date and time component:
 	day   : 1 to 30
 	hour  : 0 to 23
 	minute/second : 0 to 59
+	nanosecond : 0 to 999,999,999
 
-Date::Calendar::Hebrew doesn't support timezones. It uses the floating timezone.
+C<Date::Calendar::Hebrew> doesn't support timezones. It uses the floating timezone.
 
 The days on the Hebrew calendar begin at sunset. If you want to know the Hebrew
-date, accurate with regard to local sunset, see the README.
+date, accurate with regard to local sunset, see the SUNSET section below.
 
 =item * from_object(object => $object)
 
@@ -581,7 +755,7 @@ provide cross-calendar compatibility.
 This method allows you to modify the values of the object. valid
 fields are "year", "month", "day", "hour", "minute", "second",
 and "nanosecond" . Returns the object being modified.
-Values are checked for validity just as they are in new().
+Values are checked for validity just as they are in C<new()>.
 
 =item * utc_rd_values
 
@@ -602,11 +776,11 @@ Returns a working copy of the object.
 
 =item * now
 
-This class method returns an object created from DateTime->now.
+This class method returns a C<Date::Calendar::Hebrew> object created from C<DateTime->now()>.
 
 =item * today
 
-This class method returns an object created from DateTime->today.
+This class method returns a C<Date::Calendar::Hebrew> object created from C<DateTime->today()>.
 
 =item * year
 
@@ -623,6 +797,14 @@ Returns the day of the month, from 1..30.
 =item * day_of_month_0, day_0, mday_0
 
 Returns the day of the month, from 0..29.
+
+=item * hour   
+
+=item * minute   
+
+=item * second   
+
+Each method returns the parameter named in the method.
 
 =item * month_name($month);
 
@@ -665,13 +847,27 @@ days are 0-padded to two digits.
 By default, the values are separated by a dash (-), but this can be
 overridden by passing a value to the method.
 
-=item * hour   
+=item * hms($optional_separator);
 
-=item * minute   
+Returns the time, in the format of I<HH:MM:SS>.
 
-=item * second   
+By default, the values are separated by a colon (:), but this can be
+overridden by passing a value to the method.
 
-Each method returns the parameter named in the method.
+=item * hm($optional_separator);
+
+Returns the time, in the format of I<HH:MM>.
+
+By default, the values are separated by a colon (:), but this can be
+overridden by passing a value to the method.
+
+=item * timezone
+
+Returns 'floating'
+
+=item * datetime
+
+Returns the date & time in the format of I<YYYY/MM/DDB<T>HH:MM:SS>
 
 =item * strftime($format, ...)
 
@@ -682,7 +878,9 @@ return multiple elements, one for each format string.
 See L<DateTime> for a list of all possible format specifiers.
 I implemented as many of them as I could.
 
-=head1 INTERNAL FUNCTIONS
+=back
+
+=head2 INTERNAL FUNCTIONS
 
 =item * _from_rd($RD);
 
@@ -722,10 +920,97 @@ Returns the length of the month in question, for the year in question.
 
 =back
 
+=head2 OPERATOR OVERLOADING AND OBJECT MATH
+
+C<DateTime::Calendar::Hebrew> objects can be compares with the '>', '<', '<=>' and 'cmp' operators. You can also call
+$DT->compare($OTHER_DT).
+
+Simple math can be done on C<DateTime::Calendar::Hebrew> objects, using a C<DateTime::Duration>. The only supported fields are:
+I<days, hours, minutes, seconds & nanoseconds>. You can also call $DT->add_duration($DURATION) and $DT->subtract_duration($DURATION).
+
+=item * _compare_overload
+
+=item * _compare
+
+=item * _add_overload
+
+=item * _subtract_overload
+
+=item * add_duration
+
+=item * subtract_duration
+
+=item * _normalize
+
+=back
+
+=head1 SUNSET AND THE HEBREW DATE
+
+Days in the Hebrew Calendar start at sunset. This is only relevant for religious purposes or pedantic programmers. There are some serious (religious) issues involved, in areas that don't have a clearly defined, daily sunset or sunrise. In the Arctic Circle, there are summer days where the sun doesn't set, and winter days where the sun doesn't rise. Other areas (e.g. Anchorage, Alaska Stockholm, Sweden, Oslo, Norway) where the days are very short and twilight is exceptionally long. (I've never experienced this, I'm copying it from a webpage.) 
+
+First off, I'd like to say, that if you are Jewish and have questions related to sunrise/sunset and religious observances - consult your local Rabbi. I'm no expert.
+
+If you're not Jewish, and you want to know about Hebrew dates in these areas (or even if you are Jewish but you don't live there) - make friends with someone Jewish who lives there and ask them to ask their Rabbi. :)
+
+Now that my awkward disclaimer is finished, on to the code issues.
+
+If you wish the Hebrew date to be accurate with regard to sunset, you need to provide 2 things: A DateTime::Event::Sunrise object, initialized with a longitude and latitude for your location AND a time-zone for your location. Without a timezone, I can't calculate sunset properly. These items can be passed in via the constructor, or the set method. You could configure the C<DateTime::Event::Sunrise> object for altitude & interpolation if you wish.
+
+=back
+
+=head2 NOTES ABOUT SUNSET
+
+This feature was only tested for time-zones with a sunset for the day in question.  THE RD_DAYS VALUE IS NOT MODIFIED. The internal local- year/month/day fields are modified. The change in date only shows when using the accessor methods for the object. RD_DAYS only changes at midnight.  DateTime::Calendar::Hebrew doesn't support timezones! It still uses a 'floating' time zone. Using $obj->set_time_zone(...) isn't implemented, and won't help with sunset calculations. It needs to be a field.
+
+=head2 SAMPLE CODE
+
+=begin text
+
+#!/usr/local/bin/perl
+use DateTime::Calendar::Hebrew;
+use DateTime::Event::Sunrise;
+
+my $sunset = DateTime::Event::Sunrise->sunset (
+	# Latitude/Longitude for NYC
+	longitude =>'-73.59',
+	latitude =>'40.38',
+);
+
+# Rosh HaShana (Jewish New Year) 2003/5764
+$HT = new DateTime::Calendar::Hebrew(
+	year   => 5764,
+	month  => 7,
+	day    => 1,
+	hour   => 22,
+	minute => 30,
+);
+
+# 5764/07/01, because we haven't provided the necessary fields
+print $HT->datetime, "\n";
+
+$HT->set(
+	sunset => $sunset,
+	time_zone => "America/New_York",
+);
+
+# 5764/07/02 b/c 10:30pm is always after sunset in NYC.
+print $HT->datetime, "\n";
+exit;
+
+=end text
+
 =head1 SUPPORT
 
 Support for this module is provided via the datetime@perl.org email
 list. See http://lists.perl.org/ for more details.
+
+=head1 CREDITS
+
+- Thanks to my good friend Richie Sevrinsky who helped me make sense of the calculations in the first place.
+
+- Thanks to all the DateTime developers and the authors of the other Calendar modules, who gave me code to steal from ... I mean emulate.
+
+- Thanks to Arthur Spier, Rabbi Bushwick and Messrs. Dershowitz and Reingold for writing excellent books on the subject.
 
 =head1 AUTHOR
 
@@ -742,6 +1027,8 @@ the same terms as Perl itself.
 L<DateTime>
 
 L<DateTime::Event::Sunrise>
+
+L<DateTime::Duration>
 
 datetime@perl.org mailing list
 

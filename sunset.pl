@@ -1,6 +1,6 @@
+#!/usr/local/bin/perl
 use DateTime::Calendar::Hebrew;
 use DateTime::Event::Sunrise;
-print "1..1\n";
 
 my $sunset = DateTime::Event::Sunrise->sunset (
 	# Latitude/Longitude for NYC
@@ -15,11 +15,16 @@ $HT = new DateTime::Calendar::Hebrew(
 	day    => 1,
 	hour   => 22,
 	minute => 30,
+);
+
+# 5764/07/01, because we haven't provided the necessary fields
+print $HT->datetime, "\n";
+
+$HT->set(
 	sunset => $sunset,
 	time_zone => "America/New_York",
 );
 
-if($HT->{after_sunset} == 1) { print "ok\n"; }
-else { print "not ok\n"; }
-
+# 5764/07/02 b/c 10:30pm is always after sunset in NYC.
+print $HT->datetime, "\n";
 exit;
