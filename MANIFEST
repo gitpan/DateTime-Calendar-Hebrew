@@ -4,7 +4,7 @@ README
 Changes
 MANIFEST
 LICENSE
-sunset.pl
+eg/sunset.pl
 t/new.t
 t/today.t
 t/sunset.t

@@ -3,7 +3,7 @@ use DateTime;
 use Params::Validate qw/validate SCALAR OBJECT CODEREF/;
 
 use vars qw($VERSION);
-$VERSION = '0.03';
+$VERSION = '0.04';
 
 use strict;
 no strict 'refs';
@@ -664,9 +664,9 @@ Every month has a set number, using this module. Here's a list:
 
 =item 11. Shevat
 
-=item 12. Adar I
+=item 12. AdarI
 
-=item 13. Adar II (only in leap years)
+=item 13. AdarII (only in leap years)
 
 =back
 
@@ -685,27 +685,15 @@ Here are some absolutely essential books in understanding the Hebrew(Jewish) Cal
 
 B<The Comprehensive Hebrew Calendar by Arthur Spier. Third, Revised edition. Feldheim Publishers. ISBN 0-87306-398-8>
 
-=over 4
-
 This book is great. Besides for a complete Jewish Calendar from 1900 to 2100, it contains a 22 page discourse on the Jewish Calendar - history, calculation method, religious observances - the works.
-
-=back
 
 B<Understanding the Jewish Calendar by Rabbi Nathan Bushwick. Moznaim Publishing Corporation. ISBN 0-94011-817-3>
 
-=over 4
-
 Another excellent book. Explains the calendar, lunation cycles, torah portions and more. This has more Astronomy than any of the others.
-
-=back 
 
 B<Calendrical Calculations by Edward Reingold & Nachum Dershowitz. Cambridge University Press. ISBN 0-521-77167-6 or 0-521-77752-6>
 
-=over 4
-
 This book focuses on the math of calendar conversions. I use the first edition, which is full of examples in LISP. The second edition is supposed to include examples in other languages. It covers many different calendars - not just Hebrew.  See their page @ L<http://emr.cs.iit.edu/home/reingold/calendar-book/second-edition/>
-
-=back
 
 There are other books, but those are the ones I used most extensively in my Perl coding.
 
@@ -882,6 +870,8 @@ I implemented as many of them as I could.
 
 =head2 INTERNAL FUNCTIONS
 
+=over 4
+
 =item * _from_rd($RD);
 
 Calculates the Hebrew year, month and day from the RD.
@@ -928,6 +918,8 @@ $DT->compare($OTHER_DT).
 Simple math can be done on C<DateTime::Calendar::Hebrew> objects, using a C<DateTime::Duration>. The only supported fields are:
 I<days, hours, minutes, seconds & nanoseconds>. You can also call $DT->add_duration($DURATION) and $DT->subtract_duration($DURATION).
 
+=over 4
+
 =item * _compare_overload
 
 =item * _compare
@@ -956,48 +948,15 @@ Now that my awkward disclaimer is finished, on to the code issues.
 
 If you wish the Hebrew date to be accurate with regard to sunset, you need to provide 2 things: A DateTime::Event::Sunrise object, initialized with a longitude and latitude for your location AND a time-zone for your location. Without a timezone, I can't calculate sunset properly. These items can be passed in via the constructor, or the set method. You could configure the C<DateTime::Event::Sunrise> object for altitude & interpolation if you wish.
 
-=back
-
 =head2 NOTES ABOUT SUNSET
 
 This feature was only tested for time-zones with a sunset for the day in question.  THE RD_DAYS VALUE IS NOT MODIFIED. The internal local- year/month/day fields are modified. The change in date only shows when using the accessor methods for the object. RD_DAYS only changes at midnight.  DateTime::Calendar::Hebrew doesn't support timezones! It still uses a 'floating' time zone. Using $obj->set_time_zone(...) isn't implemented, and won't help with sunset calculations. It needs to be a field.
 
+As has been pointed out to me, there is a feature/bug that causes some confusion in the conversions. I prioritized the calculations, so that the conversion from DateTime to DateTime::Calendar::Hebrew would always look right. If you provide an english date, with a time after sunset but before midnight, you will get a Hebrew time for the next day. The RD will stay the same, but the Hebrew date changes. Conversly, if you want to say the night of a certain Hebrew date, you need to use the date of the previous day. The sunset 'belongs' to the English date e.g. If you say "Nissan 14 5764, after sunset" (The time to search for leavining on Passover eve), the code converts it to the RD equivalent to "Monday, April 5th , 2004". After sunset of April 5th, is "Nissan 15th"! So if you wanted an object to represent the time to search for leavening, you need to create an object for "Nissan 13 5764, after sunset", which will print out as "Nissan 14 5764, after sunset".
+
 =head2 SAMPLE CODE
 
-=begin text
-
-#!/usr/local/bin/perl
-use DateTime::Calendar::Hebrew;
-use DateTime::Event::Sunrise;
-
-my $sunset = DateTime::Event::Sunrise->sunset (
-	# Latitude/Longitude for NYC
-	longitude =>'-73.59',
-	latitude =>'40.38',
-);
-
-# Rosh HaShana (Jewish New Year) 2003/5764
-$HT = new DateTime::Calendar::Hebrew(
-	year   => 5764,
-	month  => 7,
-	day    => 1,
-	hour   => 22,
-	minute => 30,
-);
-
-# 5764/07/01, because we haven't provided the necessary fields
-print $HT->datetime, "\n";
-
-$HT->set(
-	sunset => $sunset,
-	time_zone => "America/New_York",
-);
-
-# 5764/07/02 b/c 10:30pm is always after sunset in NYC.
-print $HT->datetime, "\n";
-exit;
-
-=end text
+See C<eg/sunset.pl>, included in this distribution.
 
 =head1 SUPPORT
 

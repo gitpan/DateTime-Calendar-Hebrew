@@ -1,5 +1,10 @@
 Revision history for Perl extension DateTime::Calendar::Hebrew.
 
+.04  Thu Oct 03 12:00:00 2003
+	- moved sunset.pl to eg/sunset.pl. Added more samples.
+	- added to the docs to explain more about the sunset calculations.
+	- ran podchecker on my module
+
 .03  Thu Oct 03 00:00:00 2003
 	- Sunset/truncate error resolved
 	- Subroutines to compare objects & add/subtract Durations
