@@ -1,0 +1,25 @@
+DateTime-Calendar-Hebrew
+========================
+
+This module implements the Hebrew calendar.
+
+INSTALLATION
+
+To install this module type the following:
+
+	perl Makefile.PL
+	make
+	make test
+	make install
+
+The module  documentation includes everything you need to know about using the module.
+
+Details about the Hebrew calendar can be found in README.hebrew
+
+COPYRIGHT
+
+  ©2003 Steven Weinberger. All rights reserved.
+
+This library is free software; you can redistribute it and/or modify
+it under the same terms as Perl itself.
+

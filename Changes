@@ -1,0 +1,6 @@
+Revision history for Perl extension DateTime::Calendar::Hebrew.
+
+.01  Tue Sep 23 00:00:00 2003
+	- original version; created by h2xs 1.21 with options
+		-AX -n DateTime::Calendar::Hebrew -v .01
+
