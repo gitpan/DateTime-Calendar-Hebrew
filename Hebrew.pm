@@ -3,7 +3,8 @@ use DateTime;
 use Params::Validate qw/validate SCALAR OBJECT CODEREF/;
 
 use vars qw($VERSION);
-$VERSION = '0.04';
+$VERSION = '0.05';
+use 5.010_000;
 
 use strict;
 no strict 'refs';
@@ -185,7 +186,10 @@ sub set {
 
 sub utc_rd_values {
 	my $self = shift;
-	return @{$self}{ qw/rd_days rd_secs rd_nanosecs/ };
+	my @res = @{$self}{ qw/rd_days rd_secs rd_nanosecs/ };
+	# Protect against undef
+	$res[2] ||= 0;
+	return @res;
 }
 
 sub utc_rd_as_seconds {
@@ -434,7 +438,9 @@ sub day_name {
     return (qw/Sunday Monday Tuesday Wednesday Thursday Friday Shabbos/)[$day - 1];
 }
 
-sub time_zone { 'floating' }
+use DateTime::TimeZone::Floating qw( );
+sub time_zone { DateTime::TimeZone::Floating->new() } 
+
 
 sub year    { $_[0]->{year} }
 
@@ -938,7 +944,14 @@ I<days, hours, minutes, seconds & nanoseconds>. You can also call $DT->add_durat
 
 =head1 SUNSET AND THE HEBREW DATE
 
-Days in the Hebrew Calendar start at sunset. This is only relevant for religious purposes or pedantic programmers. There are some serious (religious) issues involved, in areas that don't have a clearly defined, daily sunset or sunrise. In the Arctic Circle, there are summer days where the sun doesn't set, and winter days where the sun doesn't rise. Other areas (e.g. Anchorage, Alaska Stockholm, Sweden, Oslo, Norway) where the days are very short and twilight is exceptionally long. (I've never experienced this, I'm copying it from a webpage.) 
+Days in the Hebrew Calendar start at sunset. This is only relevant
+for religious purposes or pedantic programmers. There are some serious
+(religious) issues involved, in areas that don't have a clearly defined,
+daily sunset or sunrise. In the Arctic Circle, there are summer days where
+the sun doesn't set, and winter days where the sun doesn't rise. Other
+areas (e.g. Anchorage, Alaska Stockholm, Sweden, Oslo, Norway) where
+the days are very short and twilight is exceptionally long. (I've never
+experienced this, I'm copying it from a webpage.)
 
 First off, I'd like to say, that if you are Jewish and have questions related to sunrise/sunset and religious observances - consult your local Rabbi. I'm no expert.
 
@@ -946,13 +959,39 @@ If you're not Jewish, and you want to know about Hebrew dates in these areas (or
 
 Now that my awkward disclaimer is finished, on to the code issues.
 
-If you wish the Hebrew date to be accurate with regard to sunset, you need to provide 2 things: A DateTime::Event::Sunrise object, initialized with a longitude and latitude for your location AND a time-zone for your location. Without a timezone, I can't calculate sunset properly. These items can be passed in via the constructor, or the set method. You could configure the C<DateTime::Event::Sunrise> object for altitude & interpolation if you wish.
+If you wish the Hebrew date to be accurate with regard to sunset, you
+need to provide 2 things: A DateTime::Event::Sunrise object, initialized
+with a longitude and latitude for your location AND a time-zone for your
+location. Without a timezone, I can't calculate sunset properly. These
+items can be passed in via the constructor, or the set method. You
+could configure the C<DateTime::Event::Sunrise> object for altitude &
+interpolation if you wish.
 
 =head2 NOTES ABOUT SUNSET
 
-This feature was only tested for time-zones with a sunset for the day in question.  THE RD_DAYS VALUE IS NOT MODIFIED. The internal local- year/month/day fields are modified. The change in date only shows when using the accessor methods for the object. RD_DAYS only changes at midnight.  DateTime::Calendar::Hebrew doesn't support timezones! It still uses a 'floating' time zone. Using $obj->set_time_zone(...) isn't implemented, and won't help with sunset calculations. It needs to be a field.
+This feature was only tested for time-zones with a sunset for the day
+in question.  THE RD_DAYS VALUE IS NOT MODIFIED. The internal local-
+year/month/day fields are modified. The change in date only shows
+when using the accessor methods for the object. RD_DAYS only changes
+at midnight.  DateTime::Calendar::Hebrew doesn't support timezones! It
+still uses a 'floating' time zone. Using $obj->set_time_zone(...) isn't
+implemented, and won't help with sunset calculations. It needs to be
+a field.
 
-As has been pointed out to me, there is a feature/bug that causes some confusion in the conversions. I prioritized the calculations, so that the conversion from DateTime to DateTime::Calendar::Hebrew would always look right. If you provide an english date, with a time after sunset but before midnight, you will get a Hebrew time for the next day. The RD will stay the same, but the Hebrew date changes. Conversly, if you want to say the night of a certain Hebrew date, you need to use the date of the previous day. The sunset 'belongs' to the English date e.g. If you say "Nissan 14 5764, after sunset" (The time to search for leavining on Passover eve), the code converts it to the RD equivalent to "Monday, April 5th , 2004". After sunset of April 5th, is "Nissan 15th"! So if you wanted an object to represent the time to search for leavening, you need to create an object for "Nissan 13 5764, after sunset", which will print out as "Nissan 14 5764, after sunset".
+As has been pointed out to me, there is a feature/bug that causes some
+confusion in the conversions. I prioritized the calculations, so that
+the conversion from DateTime to DateTime::Calendar::Hebrew would always
+look right. If you provide an english date, with a time after sunset
+but before midnight, you will get a Hebrew time for the next day. The RD
+will stay the same, but the Hebrew date changes. Conversly, if you want
+to say the night of a certain Hebrew date, you need to use the date of
+the previous day. The sunset 'belongs' to the English date e.g. If you
+say "Nissan 14 5764, after sunset" (The time to search for leavening on
+Passover eve), the code converts it to the RD equivalent to "Monday,
+April 5th , 2004". After sunset of April 5th, is "Nissan 15th"! So if
+you wanted an object to represent the time to search for leavening,
+you need to create an object for "Nissan 13 5764, after sunset", which
+will print out as "Nissan 14 5764, after sunset".
 
 =head2 SAMPLE CODE
 
@@ -974,6 +1013,7 @@ list. See http://lists.perl.org/ for more details.
 =head1 AUTHOR
 
 Steven J. Weinberger <perl@psycomp.com>
+Raphael Mankin <RAPMANKIN@cpan.org> (co-maintainer)
 
 =head1 COPYRIGHT
 
@@ -988,6 +1028,8 @@ L<DateTime>
 L<DateTime::Event::Sunrise>
 
 L<DateTime::Duration>
+
+L<DateTime::Event::Jewish>
 
 datetime@perl.org mailing list
 

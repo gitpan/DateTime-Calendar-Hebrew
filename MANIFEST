@@ -17,3 +17,4 @@ t/set.t
 t/strftime.t
 t/overload.t
 t/durations.t
+META.yml                                 Module meta-data (added by MakeMaker)

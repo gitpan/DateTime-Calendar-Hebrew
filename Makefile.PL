@@ -5,6 +5,7 @@ WriteMakefile(
     'NAME'		=> 'DateTime::Calendar::Hebrew',
     'VERSION_FROM'	=> 'Hebrew.pm', # finds $VERSION
     'PREREQ_PM'		=> {
+		'DateTime::TimeZone::Floating' => '0',
 		'DateTime'	=> '0',
 		'DateTime::Event::Sunrise'	=> '0',
 		'DateTime::Duration'	=> '0',

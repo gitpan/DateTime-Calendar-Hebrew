@@ -1,5 +1,11 @@
 Revision history for Perl extension DateTime::Calendar::Hebrew.
 
+.05  Mon 7 Nov 2011
+	- timezone() now returns a floating timezone object instead of the
+	  string 'floating'
+	- utc_rd_values() is protected against undef values in its
+	  return values. Makes interval arithmetic work properly.
+
 .04  Thu Oct 03 12:00:00 2003
 	- moved sunset.pl to eg/sunset.pl. Added more samples.
 	- added to the docs to explain more about the sunset calculations.
